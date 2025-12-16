@@ -25,38 +25,36 @@ async fn main() {
 async fn run_loop(plugin: &mut Plugin, options: &Options) {
     let mut next_tick = Instant::now();
 
-    loop {
-        update_temps(plugin).await;
+    let mut sys = System::new();
+    let mut components = Components::new();
 
-        next_tick += Duration::from_secs(options.update_interval);
+    loop {
+        update_temps(plugin, &mut sys, &mut components).await;
+
+        next_tick += Duration::from_secs(options.update_interval.max(1));
         sleep_until(next_tick).await;
     }
 }
 
-async fn update_temps(plugin: &mut Plugin) {
+async fn update_temps(
+    plugin: &mut Plugin,
+    sys: &mut System,
+    components: &mut Components,
+) {
     let mut table = Table::default();
-    let mut sys = System::new_all();
 
-    sys.refresh_all();
+    sys.refresh_cpu_all();
+    sys.refresh_memory();
+
     table.items.insert("cpu usage".into(), sys.global_cpu_usage().into());
-
     table.items.insert("used memory".into(), sys.used_memory().into());
     table.items.insert("total memory".into(), sys.total_memory().into());
-    table.items.insert("free memory".into(), sys.free_memory().into());
     table.items.insert("available memory".into(), sys.available_memory().into());
 
-    let components = Components::new_with_refreshed_list();
+    components.refresh(false);
     for component in components.list() {
-        let label = component.label();
-        let temp = component.temperature();
-
-        match temp {
-            Some(value) => {
-                table.items.insert(label.to_owned(), value.into());
-            }
-            None => {
-                debug!("Skipping component '{}': no temperature reported", label);
-            }
+        if let Some(temp) = component.temperature() {
+            table.items.insert(component.label().to_owned(), temp.into());
         }
     }
 
